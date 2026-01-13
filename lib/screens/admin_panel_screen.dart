@@ -462,9 +462,36 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   ),
                   onPressed: () => _toggleExpanded(master),
                 ),
-                title: Text(
-                  master.masterTerm,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                title: Row(
+                  children: [
+                    Text(
+                      master.masterTerm,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (master.categoryName != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00B4D8).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF00B4D8).withOpacity(0.5),
+                          ),
+                        ),
+                        child: Text(
+                          master.categoryName!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF00B4D8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 subtitle: Text(
                   synonyms != null
@@ -569,13 +596,32 @@ class _MasterTermDialogState extends State<_MasterTermDialog> {
   final _formKey = GlobalKey<FormState>();
   final _termController = TextEditingController();
   bool _isLoading = false;
+  bool _isLoadingCategories = true;
   String? _errorMessage;
+  List<Category> _categories = [];
+  int? _selectedCategoryId;
 
   @override
   void initState() {
     super.initState();
     if (widget.existingMaster != null) {
       _termController.text = widget.existingMaster!.masterTerm;
+      _selectedCategoryId = widget.existingMaster!.categoryId;
+    }
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await widget.apiService.getAllCategories();
+      setState(() {
+        _categories = categories;
+        _isLoadingCategories = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingCategories = false;
+      });
     }
   }
 
@@ -600,12 +646,14 @@ class _MasterTermDialogState extends State<_MasterTermDialog> {
           widget.existingMaster!.id,
           UpdateMasterTermRequest(
             masterTerm: _termController.text.trim(),
+            categoryId: _selectedCategoryId,
           ),
         );
       } else {
         result = await widget.apiService.createMaster(
           CreateMasterTermRequest(
             masterTerm: _termController.text.trim(),
+            categoryId: _selectedCategoryId,
           ),
         );
       }
@@ -674,6 +722,32 @@ class _MasterTermDialogState extends State<_MasterTermDialog> {
                 },
                 autofocus: true,
               ),
+              const SizedBox(height: 16),
+              _isLoadingCategories
+                  ? const Center(child: CircularProgressIndicator())
+                  : DropdownButtonFormField<int?>(
+                      value: _selectedCategoryId,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        hintText: 'Select a category (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('No Category'),
+                        ),
+                        ..._categories.map((category) => DropdownMenuItem<int?>(
+                              value: category.id,
+                              child: Text(category.categoryName),
+                            )),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCategoryId = value;
+                        });
+                      },
+                    ),
             ],
           ),
         ),

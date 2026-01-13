@@ -1,13 +1,41 @@
+class Category {
+  final int id;
+  final String categoryName;
+
+  Category({
+    required this.id,
+    required this.categoryName,
+  });
+
+  factory Category.fromJson(Map<String, dynamic> json) {
+    return Category(
+      id: json['id'] as int,
+      categoryName: json['categoryName'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'categoryName': categoryName,
+    };
+  }
+}
+
 class MasterTerm {
   final int id;
   final String masterTerm;
   final bool isIncluded;
+  final int? categoryId;
+  final String? categoryName;
   List<Synonym> synonyms;
 
   MasterTerm({
     required this.id,
     required this.masterTerm,
     required this.isIncluded,
+    this.categoryId,
+    this.categoryName,
     this.synonyms = const [],
   });
 
@@ -16,6 +44,8 @@ class MasterTerm {
       id: json['id'] as int,
       masterTerm: json['masterTerm'] as String,
       isIncluded: json['isIncluded'] as bool? ?? true,
+      categoryId: json['categoryId'] as int?,
+      categoryName: json['categoryName'] as String?,
     );
   }
 
@@ -24,6 +54,8 @@ class MasterTerm {
       'id': id,
       'masterTerm': masterTerm,
       'isIncluded': isIncluded,
+      'categoryId': categoryId,
+      'categoryName': categoryName,
     };
   }
 
@@ -31,12 +63,16 @@ class MasterTerm {
     int? id,
     String? masterTerm,
     bool? isIncluded,
+    int? categoryId,
+    String? categoryName,
     List<Synonym>? synonyms,
   }) {
     return MasterTerm(
       id: id ?? this.id,
       masterTerm: masterTerm ?? this.masterTerm,
       isIncluded: isIncluded ?? this.isIncluded,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
       synonyms: synonyms ?? this.synonyms,
     );
   }
@@ -88,19 +124,50 @@ class Synonym {
   }
 }
 
+class CreateCategoryRequest {
+  final String categoryName;
+
+  CreateCategoryRequest({
+    required this.categoryName,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'categoryName': categoryName,
+    };
+  }
+}
+
+class UpdateCategoryRequest {
+  final String categoryName;
+
+  UpdateCategoryRequest({
+    required this.categoryName,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'categoryName': categoryName,
+    };
+  }
+}
+
 class CreateMasterTermRequest {
   final String masterTerm;
   final bool isIncluded;
+  final int? categoryId;
 
   CreateMasterTermRequest({
     required this.masterTerm,
     this.isIncluded = true,
+    this.categoryId,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'masterTerm': masterTerm,
       'isIncluded': isIncluded,
+      if (categoryId != null) 'categoryId': categoryId,
     };
   }
 }
@@ -108,16 +175,19 @@ class CreateMasterTermRequest {
 class UpdateMasterTermRequest {
   final String masterTerm;
   final bool isIncluded;
+  final int? categoryId;
 
   UpdateMasterTermRequest({
     required this.masterTerm,
     this.isIncluded = true,
+    this.categoryId,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'masterTerm': masterTerm,
       'isIncluded': isIncluded,
+      if (categoryId != null) 'categoryId': categoryId,
     };
   }
 }

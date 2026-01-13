@@ -10,6 +10,73 @@ class ApiService {
 
   String get _synonymsEndpoint => '$baseUrl/api/admin/synonyms';
 
+  // Categories CRUD
+
+  Future<List<Category>> getAllCategories() async {
+    final response = await http.get(
+      Uri.parse('$_synonymsEndpoint/categories'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> jsonList = json.decode(response.body);
+      return jsonList.map((json) => Category.fromJson(json)).toList();
+    } else {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _parseErrorMessage(response.body),
+      );
+    }
+  }
+
+  Future<Category> createCategory(CreateCategoryRequest request) async {
+    final response = await http.post(
+      Uri.parse('$_synonymsEndpoint/categories'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(request.toJson()),
+    );
+
+    if (response.statusCode == 201) {
+      return Category.fromJson(json.decode(response.body));
+    } else {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _parseErrorMessage(response.body),
+      );
+    }
+  }
+
+  Future<Category> updateCategory(int id, UpdateCategoryRequest request) async {
+    final response = await http.put(
+      Uri.parse('$_synonymsEndpoint/categories/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(request.toJson()),
+    );
+
+    if (response.statusCode == 200) {
+      return Category.fromJson(json.decode(response.body));
+    } else {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _parseErrorMessage(response.body),
+      );
+    }
+  }
+
+  Future<void> deleteCategory(int id) async {
+    final response = await http.delete(
+      Uri.parse('$_synonymsEndpoint/categories/$id'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode != 204) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _parseErrorMessage(response.body),
+      );
+    }
+  }
+
   // Master Terms CRUD
 
   Future<List<MasterTerm>> getAllMasters() async {
