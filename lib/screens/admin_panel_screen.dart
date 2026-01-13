@@ -69,7 +69,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         _isLoading = false;
       });
       _filterMasterTerms();
-    } on ApiException catch (e) {
+      
+      // Load all synonyms in background to show counts
+      _loadAllSynonymCounts(masters);
+    }on ApiException catch (e) {
       setState(() {
         _errorMessage = e.message;
         _isLoading = false;
@@ -79,6 +82,30 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         _errorMessage = 'Failed to load master terms: $e';
         _isLoading = false;
       });
+    }
+  }
+  
+  Future<void> _loadAllSynonymCounts(List<MasterTerm> masters) async {
+    // Load synonyms for all masters in parallel (in batches to avoid overwhelming the API)
+    const batchSize = 10;
+    for (var i = 0; i < masters.length; i += batchSize) {
+      final batch = masters.skip(i).take(batchSize);
+      await Future.wait(
+        batch.map((master) async {
+          if (!_synonymsCache.containsKey(master.id)) {
+            try {
+              final synonyms = await widget.apiService.getSynonymsByMaster(master.id);
+              _synonymsCache[master.id] = synonyms;
+            } catch (_) {
+              // Silently ignore errors for individual synonym loads
+            }
+          }
+        }),
+      );
+      // Update UI after each batch
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -439,40 +466,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   master.masterTerm,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                subtitle: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: master.isIncluded
-                            ? Colors.green[100]
-                            : Colors.orange[100],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        master.isIncluded ? 'Included' : 'Excluded',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: master.isIncluded
-                              ? Colors.green[800]
-                              : Colors.orange[800],
-                        ),
-                      ),
-                    ),
-                    if (synonyms != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '${synonyms.length} synonym${synonyms.length == 1 ? '' : 's'}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ],
+                subtitle: Text(
+                  synonyms != null
+                      ? '${synonyms.length} synonym${synonyms.length == 1 ? '' : 's'}'
+                      : 'Loading...',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -528,31 +529,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.only(left: 56, right: 16),
         title: Text(synonym.synonymTerm),
-        subtitle: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: synonym.isIncluded
-                    ? Colors.green[100]
-                    : Colors.orange[100],
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                synonym.isIncluded ? 'Included' : 'Excluded',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: synonym.isIncluded
-                      ? Colors.green[800]
-                      : Colors.orange[800],
-                ),
-              ),
-            ),
-          ],
-        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -592,7 +568,6 @@ class _MasterTermDialog extends StatefulWidget {
 class _MasterTermDialogState extends State<_MasterTermDialog> {
   final _formKey = GlobalKey<FormState>();
   final _termController = TextEditingController();
-  bool _isIncluded = true;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -601,7 +576,6 @@ class _MasterTermDialogState extends State<_MasterTermDialog> {
     super.initState();
     if (widget.existingMaster != null) {
       _termController.text = widget.existingMaster!.masterTerm;
-      _isIncluded = widget.existingMaster!.isIncluded;
     }
   }
 
@@ -626,14 +600,12 @@ class _MasterTermDialogState extends State<_MasterTermDialog> {
           widget.existingMaster!.id,
           UpdateMasterTermRequest(
             masterTerm: _termController.text.trim(),
-            isIncluded: _isIncluded,
           ),
         );
       } else {
         result = await widget.apiService.createMaster(
           CreateMasterTermRequest(
             masterTerm: _termController.text.trim(),
-            isIncluded: _isIncluded,
           ),
         );
       }
@@ -702,20 +674,6 @@ class _MasterTermDialogState extends State<_MasterTermDialog> {
                 },
                 autofocus: true,
               ),
-              const SizedBox(height: 16),
-              CheckboxListTile(
-                title: const Text('Included'),
-                subtitle: const Text(
-                  'If enabled, this term will be included in search results',
-                ),
-                value: _isIncluded,
-                onChanged: (value) {
-                  setState(() {
-                    _isIncluded = value ?? true;
-                  });
-                },
-                contentPadding: EdgeInsets.zero,
-              ),
             ],
           ),
         ),
@@ -760,7 +718,6 @@ class _SynonymDialog extends StatefulWidget {
 class _SynonymDialogState extends State<_SynonymDialog> {
   final _formKey = GlobalKey<FormState>();
   final _termController = TextEditingController();
-  bool _isIncluded = true;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -769,7 +726,6 @@ class _SynonymDialogState extends State<_SynonymDialog> {
     super.initState();
     if (widget.existingSynonym != null) {
       _termController.text = widget.existingSynonym!.synonymTerm;
-      _isIncluded = widget.existingSynonym!.isIncluded;
     }
   }
 
@@ -794,7 +750,6 @@ class _SynonymDialogState extends State<_SynonymDialog> {
           widget.existingSynonym!.id,
           UpdateSynonymRequest(
             synonymTerm: _termController.text.trim(),
-            isIncluded: _isIncluded,
           ),
         );
       } else {
@@ -802,7 +757,6 @@ class _SynonymDialogState extends State<_SynonymDialog> {
           widget.masterId,
           CreateSynonymRequest(
             synonymTerm: _termController.text.trim(),
-            isIncluded: _isIncluded,
           ),
         );
       }
@@ -870,20 +824,6 @@ class _SynonymDialogState extends State<_SynonymDialog> {
                   return null;
                 },
                 autofocus: true,
-              ),
-              const SizedBox(height: 16),
-              CheckboxListTile(
-                title: const Text('Included'),
-                subtitle: const Text(
-                  'If enabled, this synonym will be included in search results',
-                ),
-                value: _isIncluded,
-                onChanged: (value) {
-                  setState(() {
-                    _isIncluded = value ?? true;
-                  });
-                },
-                contentPadding: EdgeInsets.zero,
               ),
             ],
           ),
