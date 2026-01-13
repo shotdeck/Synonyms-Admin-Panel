@@ -1,0 +1,1137 @@
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import '../models/synonym.dart';
+import '../services/api_service.dart';
+
+class AdminPanelScreen extends StatefulWidget {
+  final ApiService apiService;
+
+  const AdminPanelScreen({super.key, required this.apiService});
+
+  @override
+  State<AdminPanelScreen> createState() => _AdminPanelScreenState();
+}
+
+class _AdminPanelScreenState extends State<AdminPanelScreen> {
+  List<MasterTerm> _masterTerms = [];
+  List<MasterTerm> _filteredMasterTerms = [];
+  Map<int, List<Synonym>> _synonymsCache = {};
+  Set<int> _expandedMasterIds = {};
+  Set<int> _loadingSynonyms = {};
+  bool _isLoading = false;
+  String? _errorMessage;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMasterTerms();
+    _searchController.addListener(_filterMasterTerms);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterMasterTerms() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredMasterTerms = _masterTerms;
+      } else {
+        _filteredMasterTerms = _masterTerms.where((master) {
+          if (master.masterTerm.toLowerCase().contains(query)) {
+            return true;
+          }
+          final synonyms = _synonymsCache[master.id];
+          if (synonyms != null) {
+            return synonyms.any((s) => s.synonymTerm.toLowerCase().contains(query));
+          }
+          return false;
+        }).toList();
+      }
+    });
+  }
+
+  Future<void> _loadMasterTerms() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final masters = await widget.apiService.getAllMasters();
+      setState(() {
+        _masterTerms = masters;
+        _filteredMasterTerms = masters;
+        _isLoading = false;
+      });
+      _filterMasterTerms();
+    } on ApiException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load master terms: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadSynonyms(int masterId) async {
+    if (_loadingSynonyms.contains(masterId)) return;
+
+    setState(() {
+      _loadingSynonyms.add(masterId);
+    });
+
+    try {
+      final synonyms = await widget.apiService.getSynonymsByMaster(masterId);
+      setState(() {
+        _synonymsCache[masterId] = synonyms;
+        _loadingSynonyms.remove(masterId);
+      });
+    } on ApiException catch (e) {
+      setState(() {
+        _loadingSynonyms.remove(masterId);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load synonyms: ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _toggleExpanded(MasterTerm master) {
+    setState(() {
+      if (_expandedMasterIds.contains(master.id)) {
+        _expandedMasterIds.remove(master.id);
+      } else {
+        _expandedMasterIds.add(master.id);
+        if (!_synonymsCache.containsKey(master.id)) {
+          _loadSynonyms(master.id);
+        }
+      }
+    });
+  }
+
+  Future<void> _showAddMasterDialog() async {
+    final result = await showDialog<MasterTerm>(
+      context: context,
+      builder: (context) => _MasterTermDialog(
+        title: 'Add Master Term',
+        apiService: widget.apiService,
+      ),
+    );
+
+    if (result != null) {
+      _loadMasterTerms();
+    }
+  }
+
+  Future<void> _showEditMasterDialog(MasterTerm master) async {
+    final result = await showDialog<MasterTerm>(
+      context: context,
+      builder: (context) => _MasterTermDialog(
+        title: 'Edit Master Term',
+        apiService: widget.apiService,
+        existingMaster: master,
+      ),
+    );
+
+    if (result != null) {
+      _loadMasterTerms();
+    }
+  }
+
+  Future<void> _deleteMaster(MasterTerm master) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Master Term'),
+        content: Text(
+          'Are you sure you want to delete "${master.masterTerm}" and all its synonyms?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await widget.apiService.deleteMaster(master.id);
+        _synonymsCache.remove(master.id);
+        _expandedMasterIds.remove(master.id);
+        _loadMasterTerms();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Deleted "${master.masterTerm}"')),
+          );
+        }
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete: ${e.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showAddSynonymDialog(MasterTerm master) async {
+    final result = await showDialog<Synonym>(
+      context: context,
+      builder: (context) => _SynonymDialog(
+        title: 'Add Synonym',
+        apiService: widget.apiService,
+        masterId: master.id,
+      ),
+    );
+
+    if (result != null) {
+      _loadSynonyms(master.id);
+    }
+  }
+
+  Future<void> _showEditSynonymDialog(Synonym synonym) async {
+    final result = await showDialog<Synonym>(
+      context: context,
+      builder: (context) => _SynonymDialog(
+        title: 'Edit Synonym',
+        apiService: widget.apiService,
+        masterId: synonym.masterId,
+        existingSynonym: synonym,
+      ),
+    );
+
+    if (result != null) {
+      _loadSynonyms(synonym.masterId);
+    }
+  }
+
+  Future<void> _deleteSynonym(Synonym synonym) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Synonym'),
+        content: Text('Are you sure you want to delete "${synonym.synonymTerm}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await widget.apiService.deleteSynonym(synonym.id);
+        _loadSynonyms(synonym.masterId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Deleted "${synonym.synonymTerm}"')),
+          );
+        }
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete: ${e.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showImportDialog() async {
+    final result = await showDialog<ImportResult>(
+      context: context,
+      builder: (context) => _ImportDialog(apiService: widget.apiService),
+    );
+
+    if (result != null && !result.dryRun) {
+      _synonymsCache.clear();
+      _expandedMasterIds.clear();
+      _loadMasterTerms();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.network(
+              'assets/shotdeck_website_logo_r.png',
+              height: 28,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 16),
+            const Text(
+              'Synonyms Admin',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Import CSV',
+            onPressed: _showImportDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _loadMasterTerms,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search master terms...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                              },
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  '${_filteredMasterTerms.length} of ${_masterTerms.length} master terms',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _buildContent(),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAddMasterDialog,
+        icon: const Icon(Icons.add),
+        label: const Text('Add Master Term'),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+            const SizedBox(height: 16),
+            Text(
+              'Error loading master terms',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(_errorMessage!),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _loadMasterTerms,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_filteredMasterTerms.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            Text(
+              _searchController.text.isEmpty
+                  ? 'No master terms yet'
+                  : 'No master terms match your search',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            if (_searchController.text.isEmpty)
+              const Text('Click the + button to add one'),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _filteredMasterTerms.length,
+      itemBuilder: (context, index) {
+        final master = _filteredMasterTerms[index];
+        final isExpanded = _expandedMasterIds.contains(master.id);
+        final synonyms = _synonymsCache[master.id];
+        final isLoadingSynonyms = _loadingSynonyms.contains(master.id);
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Column(
+            children: [
+              ListTile(
+                leading: IconButton(
+                  icon: Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  onPressed: () => _toggleExpanded(master),
+                ),
+                title: Text(
+                  master.masterTerm,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: master.isIncluded
+                            ? Colors.green[100]
+                            : Colors.orange[100],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        master.isIncluded ? 'Included' : 'Excluded',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: master.isIncluded
+                              ? Colors.green[800]
+                              : Colors.orange[800],
+                        ),
+                      ),
+                    ),
+                    if (synonyms != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '${synonyms.length} synonym${synonyms.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: 'Add Synonym',
+                      onPressed: () => _showAddSynonymDialog(master),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      tooltip: 'Edit',
+                      onPressed: () => _showEditMasterDialog(master),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete),
+                      tooltip: 'Delete',
+                      color: Colors.red,
+                      onPressed: () => _deleteMaster(master),
+                    ),
+                  ],
+                ),
+                onTap: () => _toggleExpanded(master),
+              ),
+              if (isExpanded) ...[
+                const Divider(height: 1),
+                if (isLoadingSynonyms)
+                  const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (synonyms == null || synonyms.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      'No synonyms yet. Click + to add one.',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  )
+                else
+                  ...synonyms.map((synonym) => _buildSynonymTile(synonym)),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSynonymTile(Synonym synonym) {
+    return Container(
+      color: Colors.grey[900],
+      child: ListTile(
+        contentPadding: const EdgeInsets.only(left: 56, right: 16),
+        title: Text(synonym.synonymTerm),
+        subtitle: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                color: synonym.isIncluded
+                    ? Colors.green[100]
+                    : Colors.orange[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                synonym.isIncluded ? 'Included' : 'Excluded',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: synonym.isIncluded
+                      ? Colors.green[800]
+                      : Colors.orange[800],
+                ),
+              ),
+            ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, size: 20),
+              tooltip: 'Edit',
+              onPressed: () => _showEditSynonymDialog(synonym),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, size: 20),
+              tooltip: 'Delete',
+              color: Colors.red,
+              onPressed: () => _deleteSynonym(synonym),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MasterTermDialog extends StatefulWidget {
+  final String title;
+  final ApiService apiService;
+  final MasterTerm? existingMaster;
+
+  const _MasterTermDialog({
+    required this.title,
+    required this.apiService,
+    this.existingMaster,
+  });
+
+  @override
+  State<_MasterTermDialog> createState() => _MasterTermDialogState();
+}
+
+class _MasterTermDialogState extends State<_MasterTermDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _termController = TextEditingController();
+  bool _isIncluded = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingMaster != null) {
+      _termController.text = widget.existingMaster!.masterTerm;
+      _isIncluded = widget.existingMaster!.isIncluded;
+    }
+  }
+
+  @override
+  void dispose() {
+    _termController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      MasterTerm result;
+      if (widget.existingMaster != null) {
+        result = await widget.apiService.updateMaster(
+          widget.existingMaster!.id,
+          UpdateMasterTermRequest(
+            masterTerm: _termController.text.trim(),
+            isIncluded: _isIncluded,
+          ),
+        );
+      } else {
+        result = await widget.apiService.createMaster(
+          CreateMasterTermRequest(
+            masterTerm: _termController.text.trim(),
+            isIncluded: _isIncluded,
+          ),
+        );
+      }
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    } on ApiException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An error occurred: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 400,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red[700], size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red[700]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              TextFormField(
+                controller: _termController,
+                decoration: const InputDecoration(
+                  labelText: 'Master Term',
+                  hintText: 'Enter the master term',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a master term';
+                  }
+                  return null;
+                },
+                autofocus: true,
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Included'),
+                subtitle: const Text(
+                  'If enabled, this term will be included in search results',
+                ),
+                value: _isIncluded,
+                onChanged: (value) {
+                  setState(() {
+                    _isIncluded = value ?? true;
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _save,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(widget.existingMaster != null ? 'Update' : 'Create'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SynonymDialog extends StatefulWidget {
+  final String title;
+  final ApiService apiService;
+  final int masterId;
+  final Synonym? existingSynonym;
+
+  const _SynonymDialog({
+    required this.title,
+    required this.apiService,
+    required this.masterId,
+    this.existingSynonym,
+  });
+
+  @override
+  State<_SynonymDialog> createState() => _SynonymDialogState();
+}
+
+class _SynonymDialogState extends State<_SynonymDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _termController = TextEditingController();
+  bool _isIncluded = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingSynonym != null) {
+      _termController.text = widget.existingSynonym!.synonymTerm;
+      _isIncluded = widget.existingSynonym!.isIncluded;
+    }
+  }
+
+  @override
+  void dispose() {
+    _termController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      Synonym result;
+      if (widget.existingSynonym != null) {
+        result = await widget.apiService.updateSynonym(
+          widget.existingSynonym!.id,
+          UpdateSynonymRequest(
+            synonymTerm: _termController.text.trim(),
+            isIncluded: _isIncluded,
+          ),
+        );
+      } else {
+        result = await widget.apiService.createSynonym(
+          widget.masterId,
+          CreateSynonymRequest(
+            synonymTerm: _termController.text.trim(),
+            isIncluded: _isIncluded,
+          ),
+        );
+      }
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    } on ApiException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An error occurred: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 400,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.red[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red[700], size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red[700]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              TextFormField(
+                controller: _termController,
+                decoration: const InputDecoration(
+                  labelText: 'Synonym Term',
+                  hintText: 'Enter the synonym term',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a synonym term';
+                  }
+                  return null;
+                },
+                autofocus: true,
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                title: const Text('Included'),
+                subtitle: const Text(
+                  'If enabled, this synonym will be included in search results',
+                ),
+                value: _isIncluded,
+                onChanged: (value) {
+                  setState(() {
+                    _isIncluded = value ?? true;
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _save,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(widget.existingSynonym != null ? 'Update' : 'Create'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImportDialog extends StatefulWidget {
+  final ApiService apiService;
+
+  const _ImportDialog({required this.apiService});
+
+  @override
+  State<_ImportDialog> createState() => _ImportDialogState();
+}
+
+class _ImportDialogState extends State<_ImportDialog> {
+  PlatformFile? _selectedFile;
+  bool _dryRun = true;
+  bool _isLoading = false;
+  ImportResult? _result;
+  String? _errorMessage;
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+      withData: true,
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _selectedFile = result.files.first;
+        _result = null;
+        _errorMessage = null;
+      });
+    }
+  }
+
+  Future<void> _import() async {
+    if (_selectedFile == null || _selectedFile!.bytes == null) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _result = null;
+    });
+
+    try {
+      final result = await widget.apiService.importCsv(
+        fileBytes: _selectedFile!.bytes!,
+        fileName: _selectedFile!.name,
+        dryRun: _dryRun,
+      );
+      setState(() {
+        _result = result;
+        _isLoading = false;
+      });
+    } on ApiException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An error occurred: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Import CSV'),
+      content: SizedBox(
+        width: 500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Upload a CSV file with columns: MASTER TERM (required), ALT TERM 1, ALT TERM 2, ... (optional)',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isLoading ? null : _pickFile,
+                  icon: const Icon(Icons.attach_file),
+                  label: const Text('Select File'),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    _selectedFile?.name ?? 'No file selected',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            CheckboxListTile(
+              title: const Text('Dry Run'),
+              subtitle: const Text(
+                'Preview changes without actually importing',
+              ),
+              value: _dryRun,
+              onChanged: _isLoading
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _dryRun = value ?? true;
+                      });
+                    },
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error, color: Colors.red[700]),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.red[700]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (_result != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _result!.dryRun ? Colors.blue[50] : Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color:
+                        _result!.dryRun ? Colors.blue[200]! : Colors.green[200]!,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _result!.dryRun ? Icons.preview : Icons.check_circle,
+                          color: _result!.dryRun
+                              ? Colors.blue[700]
+                              : Colors.green[700],
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _result!.dryRun
+                              ? 'Dry Run Results'
+                              : 'Import Complete',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: _result!.dryRun
+                                ? Colors.blue[700]
+                                : Colors.green[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Rows read: ${_result!.rowsRead}'),
+                    Text('Rows skipped: ${_result!.rowsSkipped}'),
+                    Text('Master terms created: ${_result!.masterTermsCreated}'),
+                    Text('Synonyms created: ${_result!.synonymsCreated}'),
+                    if (_result!.errors.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Errors: ${_result!.errors.length}',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                      ...(_result!.errors.take(5).map((e) => Text(
+                            '  Row ${e.rowNumber}: ${e.message}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.red,
+                            ),
+                          ))),
+                      if (_result!.errors.length > 5)
+                        Text(
+                          '  ... and ${_result!.errors.length - 5} more',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading
+              ? null
+              : () => Navigator.of(context).pop(_result),
+          child: Text(_result != null && !_result!.dryRun ? 'Done' : 'Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading || _selectedFile == null ? null : _import,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(_dryRun ? 'Preview' : 'Import'),
+        ),
+      ],
+    );
+  }
+}
