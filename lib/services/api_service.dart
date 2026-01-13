@@ -243,6 +243,24 @@ class ApiService {
     }
   }
 
+  // Production Sync
+
+  Future<String> refreshProduction() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/Search/refresh'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      return response.body;
+    } else {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _parseErrorMessage(response.body),
+      );
+    }
+  }
+
   // CSV Import
 
   Future<ImportResult> importCsv({

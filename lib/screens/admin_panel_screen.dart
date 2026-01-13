@@ -20,6 +20,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Set<int> _loadingSynonyms = {};
   bool _isLoading = false;
   String? _errorMessage;
+  bool _hasUnsyncedChanges = false;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -160,6 +161,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
 
     if (result != null) {
+      setState(() => _hasUnsyncedChanges = true);
       _loadMasterTerms();
     }
   }
@@ -175,6 +177,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
 
     if (result != null) {
+      setState(() => _hasUnsyncedChanges = true);
       _loadMasterTerms();
     }
   }
@@ -206,6 +209,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         await widget.apiService.deleteMaster(master.id);
         _synonymsCache.remove(master.id);
         _expandedMasterIds.remove(master.id);
+        setState(() => _hasUnsyncedChanges = true);
         _loadMasterTerms();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -236,6 +240,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
 
     if (result != null) {
+      setState(() => _hasUnsyncedChanges = true);
       _loadSynonyms(master.id);
     }
   }
@@ -252,6 +257,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
 
     if (result != null) {
+      setState(() => _hasUnsyncedChanges = true);
       _loadSynonyms(synonym.masterId);
     }
   }
@@ -279,6 +285,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (confirmed == true) {
       try {
         await widget.apiService.deleteSynonym(synonym.id);
+        setState(() => _hasUnsyncedChanges = true);
         _loadSynonyms(synonym.masterId);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -307,7 +314,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (result != null && !result.dryRun) {
       _synonymsCache.clear();
       _expandedMasterIds.clear();
+      setState(() => _hasUnsyncedChanges = true);
       _loadMasterTerms();
+    }
+  }
+
+  Future<void> _showSyncProductionDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _SyncProductionDialog(apiService: widget.apiService),
+    );
+
+    if (result == true) {
+      setState(() => _hasUnsyncedChanges = false);
     }
   }
 
@@ -385,10 +405,26 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddMasterDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Master Term'),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'sync',
+            onPressed: _hasUnsyncedChanges ? _showSyncProductionDialog : null,
+            backgroundColor: _hasUnsyncedChanges 
+                ? const Color(0xFF4CAF50)
+                : Colors.grey[700],
+            icon: const Icon(Icons.sync),
+            label: const Text('Sync Production'),
+          ),
+          const SizedBox(width: 16),
+          FloatingActionButton.extended(
+            heroTag: 'add',
+            onPressed: _showAddMasterDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Add Master Term'),
+          ),
+        ],
       ),
     );
   }
@@ -1145,6 +1181,128 @@ class _ImportDialogState extends State<_ImportDialog> {
                 )
               : Text(_dryRun ? 'Preview' : 'Import'),
         ),
+      ],
+    );
+  }
+}
+
+class _SyncProductionDialog extends StatefulWidget {
+  final ApiService apiService;
+
+  const _SyncProductionDialog({required this.apiService});
+
+  @override
+  State<_SyncProductionDialog> createState() => _SyncProductionDialogState();
+}
+
+class _SyncProductionDialogState extends State<_SyncProductionDialog> {
+  bool _isLoading = false;
+  bool _isComplete = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncProduction();
+  }
+
+  Future<void> _syncProduction() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await widget.apiService.refreshProduction();
+      setState(() {
+        _isLoading = false;
+        _isComplete = true;
+      });
+    } on ApiException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'An error occurred: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_isComplete ? 'Sync Complete' : 'Syncing Production'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isLoading) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 24),
+              const Text(
+                'Syncing changes to production...',
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Please wait, this may take a moment.',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ] else if (_errorMessage != null) ...[
+              Icon(Icons.error_outline, size: 48, color: Colors.red[400]),
+              const SizedBox(height: 16),
+              Text(
+                'Sync Failed',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red[400],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ] else if (_isComplete) ...[
+              const Icon(
+                Icons.check_circle,
+                size: 48,
+                color: Color(0xFF4CAF50),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "Successfully sync'd production",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF4CAF50),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Your changes are now live.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        if (!_isLoading)
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(_isComplete),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _isComplete ? const Color(0xFF4CAF50) : null,
+            ),
+            child: Text(_isComplete ? 'Close' : 'Dismiss'),
+          ),
       ],
     );
   }
