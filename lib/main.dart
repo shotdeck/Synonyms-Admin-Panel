@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:html' as html;
 import 'screens/admin_panel_screen.dart';
 import 'services/api_service.dart';
-import 'config.dart';
 
 const String apiBaseUrl = 'https://shotdecksearch.azurewebsites.net';
-const String _correctPassword = appPassword;
 const String _authKey = 'keyword_extraction_authenticated';
 
 const Color shotDeckCyan = Color(0xFF00B4D8);
@@ -120,6 +118,7 @@ class PasswordScreen extends StatefulWidget {
 
 class _PasswordScreenState extends State<PasswordScreen> {
   final _passwordController = TextEditingController();
+  final _apiService = ApiService(baseUrl: apiBaseUrl);
   bool _obscurePassword = true;
   String? _errorMessage;
   bool _isLoading = false;
@@ -130,17 +129,25 @@ class _PasswordScreenState extends State<PasswordScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    if (_passwordController.text == _correctPassword) {
-      widget.onAuthenticated();
-    } else {
+    try {
+      final isValid = await _apiService.checkPassword(_passwordController.text);
+      if (isValid) {
+        widget.onAuthenticated();
+      } else {
+        setState(() {
+          _errorMessage = 'Incorrect password';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
       setState(() {
-        _errorMessage = 'Incorrect password';
+        _errorMessage = 'Error checking password. Please try again.';
         _isLoading = false;
       });
     }
