@@ -6,7 +6,7 @@ import 'config.dart';
 
 const String apiBaseUrl = 'https://shotdecksearch.azurewebsites.net';
 const String _correctPassword = appPassword;
-const String _authKey = 'synonyms_authenticated';
+const String _authKey = 'keyword_extraction_authenticated';
 
 const Color shotDeckCyan = Color(0xFF00B4D8);
 const Color shotDeckDark = Color(0xFF0A0A0A);
@@ -14,16 +14,16 @@ const Color shotDeckCardDark = Color(0xFF1A1A1A);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SynonymsAdminApp());
+  runApp(const KeywordExtractionAdminApp());
 }
 
-class SynonymsAdminApp extends StatelessWidget {
-  const SynonymsAdminApp({super.key});
+class KeywordExtractionAdminApp extends StatelessWidget {
+  const KeywordExtractionAdminApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ShotDeck - Synonyms Admin',
+      title: 'ShotDeck - Keyword Extraction Admin',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
@@ -42,7 +42,7 @@ class SynonymsAdminApp extends StatelessWidget {
           foregroundColor: Colors.white,
           elevation: 0,
         ),
-        cardTheme: const CardTheme(
+        cardTheme: const CardThemeData(
           color: shotDeckCardDark,
           elevation: 4,
         ),
@@ -171,7 +171,7 @@ class _PasswordScreenState extends State<PasswordScreen> {
                   ),
                   const SizedBox(height: 32),
                   Text(
-                    'Synonyms Admin',
+                    'Keyword Extraction Admin',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: Colors.white,

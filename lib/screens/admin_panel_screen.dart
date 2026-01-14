@@ -345,7 +345,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             ),
             const SizedBox(width: 16),
             const Text(
-              'Synonyms Admin',
+              'Keyword Extraction Admin',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
