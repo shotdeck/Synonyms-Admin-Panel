@@ -1,4 +1,4 @@
-# ShotDeck Synonyms Admin
+# ShotDeck Keywords Admin
 
 A Flutter web application for managing synonyms in the ShotDeck search system. This admin panel provides a clean, modern interface for CRUD operations on the synonyms database, which uses a two-table structure with master terms and their associated synonyms.
 
