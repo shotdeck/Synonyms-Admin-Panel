@@ -247,7 +247,7 @@ class ApiService {
 
   Future<bool> checkPassword(String password) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/api/check-password?password=${Uri.encodeComponent(password)}'),
+      Uri.parse('$baseUrl/api/Search/check-password?password=${Uri.encodeComponent(password)}'),
       headers: {'Content-Type': 'application/json'},
     );
 
