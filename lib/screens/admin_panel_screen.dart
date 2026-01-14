@@ -405,27 +405,136 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           ),
         ],
       ),
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'sync',
-            onPressed: _hasUnsyncedChanges ? _showSyncProductionDialog : null,
-            backgroundColor: _hasUnsyncedChanges 
-                ? const Color(0xFF4CAF50)
-                : Colors.grey[700],
-            icon: const Icon(Icons.sync),
-            label: const Text('Sync Production'),
+      floatingActionButton: LayoutBuilder(
+        builder: (context, constraints) {
+          final screenWidth = MediaQuery.of(context).size.width;
+          final isSmallScreen = screenWidth < 500;
+          
+          if (isSmallScreen) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'sync',
+                  onPressed: _hasUnsyncedChanges ? _showSyncProductionDialog : null,
+                  backgroundColor: _hasUnsyncedChanges 
+                      ? const Color(0xFF4CAF50)
+                      : Colors.grey[700],
+                  tooltip: 'Sync Production',
+                  child: const Icon(Icons.sync, size: 20),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'add',
+                  onPressed: _showAddMasterDialog,
+                  tooltip: 'Add Master Term',
+                  child: const Icon(Icons.add, size: 20),
+                ),
+              ],
+            );
+          }
+          
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FloatingActionButton.extended(
+                heroTag: 'sync',
+                onPressed: _hasUnsyncedChanges ? _showSyncProductionDialog : null,
+                backgroundColor: _hasUnsyncedChanges 
+                    ? const Color(0xFF4CAF50)
+                    : Colors.grey[700],
+                icon: const Icon(Icons.sync),
+                label: const Text('Sync Production'),
+              ),
+              const SizedBox(width: 16),
+              FloatingActionButton.extended(
+                heroTag: 'add',
+                onPressed: _showAddMasterDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Master Term'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMasterActions(MasterTerm master) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 500;
+    
+    if (isSmallScreen) {
+      return PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert, size: 20),
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: 'add',
+            child: Row(
+              children: [
+                Icon(Icons.add, size: 18),
+                SizedBox(width: 8),
+                Text('Add Synonym'),
+              ],
+            ),
           ),
-          const SizedBox(width: 16),
-          FloatingActionButton.extended(
-            heroTag: 'add',
-            onPressed: _showAddMasterDialog,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Master Term'),
+          const PopupMenuItem(
+            value: 'edit',
+            child: Row(
+              children: [
+                Icon(Icons.edit, size: 18),
+                SizedBox(width: 8),
+                Text('Edit'),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                Icon(Icons.delete, size: 18, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Delete', style: TextStyle(color: Colors.red)),
+              ],
+            ),
           ),
         ],
-      ),
+        onSelected: (value) {
+          switch (value) {
+            case 'add':
+              _showAddSynonymDialog(master);
+              break;
+            case 'edit':
+              _showEditMasterDialog(master);
+              break;
+            case 'delete':
+              _deleteMaster(master);
+              break;
+          }
+        },
+      );
+    }
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.add),
+          tooltip: 'Add Synonym',
+          onPressed: () => _showAddSynonymDialog(master),
+        ),
+        IconButton(
+          icon: const Icon(Icons.edit),
+          tooltip: 'Edit',
+          onPressed: () => _showEditMasterDialog(master),
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete),
+          tooltip: 'Delete',
+          color: Colors.red,
+          onPressed: () => _deleteMaster(master),
+        ),
+      ],
     );
   }
 
@@ -538,27 +647,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                     color: Colors.grey[600],
                   ),
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      tooltip: 'Add Synonym',
-                      onPressed: () => _showAddSynonymDialog(master),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.edit),
-                      tooltip: 'Edit',
-                      onPressed: () => _showEditMasterDialog(master),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete),
-                      tooltip: 'Delete',
-                      color: Colors.red,
-                      onPressed: () => _deleteMaster(master),
-                    ),
-                  ],
-                ),
+                trailing: _buildMasterActions(master),
                 onTap: () => _toggleExpanded(master),
               ),
               if (isExpanded) ...[
@@ -587,27 +676,69 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   }
 
   Widget _buildSynonymTile(Synonym synonym) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 500;
+    
     return Container(
       color: Colors.grey[900],
       child: ListTile(
-        contentPadding: const EdgeInsets.only(left: 56, right: 16),
-        title: Text(synonym.synonymTerm),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit, size: 20),
-              tooltip: 'Edit',
-              onPressed: () => _showEditSynonymDialog(synonym),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete, size: 20),
-              tooltip: 'Delete',
-              color: Colors.red,
-              onPressed: () => _deleteSynonym(synonym),
-            ),
-          ],
+        contentPadding: EdgeInsets.only(left: isSmallScreen ? 32 : 56, right: 8),
+        title: Text(
+          synonym.synonymTerm,
+          style: TextStyle(fontSize: isSmallScreen ? 14 : 16),
         ),
+        trailing: isSmallScreen
+            ? PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, size: 18),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit, size: 18),
+                        SizedBox(width: 8),
+                        Text('Edit'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, size: 18, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Delete', style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
+                onSelected: (value) {
+                  switch (value) {
+                    case 'edit':
+                      _showEditSynonymDialog(synonym);
+                      break;
+                    case 'delete':
+                      _deleteSynonym(synonym);
+                      break;
+                  }
+                },
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20),
+                    tooltip: 'Edit',
+                    onPressed: () => _showEditSynonymDialog(synonym),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete, size: 20),
+                    tooltip: 'Delete',
+                    color: Colors.red,
+                    onPressed: () => _deleteSynonym(synonym),
+                  ),
+                ],
+              ),
       ),
     );
   }
