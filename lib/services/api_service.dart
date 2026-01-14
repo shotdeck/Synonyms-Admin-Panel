@@ -246,7 +246,7 @@ class ApiService {
   // Production Sync
 
   Future<String> refreshProduction() async {
-    final response = await http.get(
+    final response = await http.post(
       Uri.parse('$baseUrl/api/Search/refresh'),
       headers: {'Content-Type': 'application/json'},
     );
